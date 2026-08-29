@@ -155,3 +155,9 @@ rm -rf ~/Applications/NoSleep.app
 # 設定を確実に戻す
 sudo pmset -a disablesleep 0
 ```
+
+---
+
+## ライセンス
+
+MIT License. 詳細は [LICENSE](LICENSE) を参照。
