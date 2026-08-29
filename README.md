@@ -1,0 +1,218 @@
+# NoSleep — Mac のスリープを止める道具
+
+macOS 標準の `pmset` と `caffeinate` だけを使って、指定した間だけ Mac をスリープさせないようにする。
+GUI（メニューバーアプリ）とコマンドラインの 2 つがある。
+
+作成日: 2026-08-29 / 動作確認: macOS 26.5.2 (Apple Silicon), zsh 5.9, Swift 6.3
+
+---
+
+## 構成
+
+| 場所 | 内容 |
+|---|---|
+| `~/Applications/NoSleep.app` | メニューバーアプリ（本体） |
+| `~/Projects/nosleep-menubar/main.swift` | アプリのソース |
+| `~/Projects/nosleep-menubar/build.sh` | ビルド＆インストール |
+| `~/.zshrc` | `nosleep` シェル関数（末尾に追記） |
+| `~/.zshrc.backup.YYYYMMDD-HHMMSS` | 関数を追加する前の `.zshrc` |
+
+### ⚠ GUI とコマンドを同時に使わないこと
+
+どちらも同じ `pmset -a disablesleep` を操作するため、片方の解除処理がもう片方の抑止まで解いてしまう。
+どちらか一方に決めて使う。GUI だけ使うなら `.zshrc` の関数は消してよい。
+
+---
+
+## メニューバーアプリの使い方
+
+### アイコンの見方
+
+| 表示 | 意味 |
+|---|---|
+| 🌙 `moon.zzz` ＋「オフ」 | 通常どおりスリープする |
+| ☕ オレンジ ＋「オン」 | スリープしない（無期限） |
+| ☕ オレンジ ＋「0:41」 | スリープしない（残り 41 分） |
+| 上記＋末尾に「…」＋薄い表示 | 認証ダイアログに応答待ち |
+
+認証中もアイコンは**現在の実際のモード**のまま。処理中であることは「…」と薄さだけで示す。
+
+### 操作
+
+- **左クリック** … オン⇄オフをトグル（無期限）。管理者パスワードの入力が必要
+- **右クリック**（または Control+クリック）… メニューを開く
+  - 見出しに現在のモードと残り時間
+  - 無期限でオン / 1時間 / 2時間 / 4時間だけオン
+  - オフにする
+  - 認証をキャンセル（認証待ちのときだけ表示）
+  - ログイン時に起動
+  - NoSleep を終了
+- **カーソルを合わせる** … 現在のモードと操作方法の説明が出る
+
+時間を指定した場合、時間切れで自動的にオフに戻る（このときも認証ダイアログが出る）。
+
+### ログイン時の自動起動
+
+メニューの「ログイン時に起動」で切り替える（`SMAppService` によるログイン項目登録）。
+システム設定 > 一般 > ログイン項目 からも外せる。
+
+自動起動しても**勝手にオンにはならない**。起動時に実際の設定値を読んで、その状態を表示するだけ。
+ただし `pmset -a disablesleep` は再起動をまたいで残るため、オンのまま再起動すると次回もオンのまま。
+
+---
+
+## `nosleep` コマンドの使い方
+
+```
+nosleep         # 1時間スリープを防ぐ
+nosleep 2       # 2時間
+nosleep abc     # 使い方を表示するだけ。電源設定は変更しない
+```
+
+引数は 1 以上の整数のみ。通常終了でも Ctrl-C でも、必ず `pmset -a disablesleep 0` に戻す
+（`trap` を INT / TERM / EXIT の 3 つに登録し、二重実行はガードしている）。
+
+---
+
+## 仕組み
+
+オンにするとき、次の 2 つを併用する。
+
+1. `sudo pmset -a disablesleep 1` … フタを閉じてもスリープしなくなる。root 権限が必要
+2. `caffeinate -dimsu [-t 秒]` … 画面 / アイドル / ディスク / システム / ユーザー活動の抑止
+
+権限が要る 1 を先に実行し、**成功したときだけ** 2 を起動する。逆順だと認証をキャンセルしたときに
+`caffeinate` だけが残ってしまうため。
+
+管理者権限は `osascript` の
+`do shell script "..." with administrator privileges` 経由で取得する（macOS 標準の認証ダイアログが出る）。
+
+### 認証は毎回出る
+
+`sudo` の認証キャッシュは既定 5 分なので、オンにするとき・オフに戻すときの両方でパスワードを求められる。
+時間指定で使うと、時間切れのタイミングでも解除のために認証ダイアログが出る。
+
+毎回の入力を避けたい場合は sudoers に NOPASSWD 行を追加する方法があるが、
+セキュリティ設定の変更にあたるので判断のうえで。
+
+```
+sudo visudo -f /etc/sudoers.d/nosleep
+# <あなたのユーザー名> ALL=(root) NOPASSWD: /usr/bin/pmset -a disablesleep *
+```
+
+---
+
+## 開発メモ（ハマりどころ）
+
+実際に踏んだ落とし穴。同じことをやるなら注意。
+
+### 1. `pmset` は書き込みと読み出しでキー名が違う
+
+| | |
+|---|---|
+| 書き込み | `pmset -a **disablesleep** 0\|1` |
+| 読み出し | `pmset -g` の「**SleepDisabled**」行 |
+
+しかも読み出しは `pmset -g custom` には**出ない**。`pmset -g`（または `-g live`）を見る必要がある。
+値はタブ区切り。
+
+これを間違えると状態読み取りが常に false を返し、「オンにしてもすぐオフに戻る」
+「オフにしても解除されない」という不具合になる。
+
+`readSleepDisabled()` は判定できないとき `nil` を返し、
+呼び出し側は `nil` のとき表示を書き換えない（誤判定で状態を壊さないための保険）。
+
+### 2. メニューバーでは `contentTintColor` が効かない
+
+`NSStatusBarButton` に `contentTintColor` を設定しても着色されず、黒く沈む。
+シンボル自体に色を焼き込むこと。
+
+```swift
+image = image?.withSymbolConfiguration(.init(paletteColors: [.systemOrange]))
+image?.isTemplate = false   // テンプレート描画をやめる
+```
+
+オフ時は `isTemplate = true` のままにして、メニューバーの標準色（白/黒）に追従させる。
+
+### 3. アイコンだけで状態を示さない
+
+オフのときに文字を出さない設計にしたら「待機中なのか壊れているのか分からない」状態になった。
+**両方のモードで必ず文字を出す**こと。
+
+### 4. `build.sh` でアプリを `rm -rf` しない
+
+ログイン項目（BTM）の登録はアプリのパスに紐づくため、バンドルごと消して入れ直すと
+「ログイン時に起動」が外れることがある。`mkdir -p` してから `ditto` で上書き更新する。
+この方式なら再ビルドしても `Disposition: [enabled, allowed, notified]` が維持されることを確認済み。
+
+同じ理由で、`Info.plist` の `CFBundleIdentifier` を変更したときもログイン項目の登録は無効になる。
+変更後の初回ビルド時は「ログイン時に起動」をチェックし直すこと。
+
+### 5. 左クリックでトグル、右クリックでメニュー
+
+`statusItem.menu` を設定したままだと左クリックでもメニューが開く。
+右クリック時だけ一時的に `menu` を差し込み、`performClick` の直後に `nil` に戻す。
+
+```swift
+statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
+// ...
+statusItem.menu = buildMenu()
+statusItem.button?.performClick(nil)
+statusItem.menu = nil
+```
+
+---
+
+## ビルドと再インストール
+
+```
+zsh ~/Projects/nosleep-menubar/build.sh
+```
+
+起動中のアプリを終了 → `swiftc` でコンパイル → `Info.plist` 生成 → ad-hoc 署名 →
+`~/Applications/NoSleep.app` へ上書きインストール、まで行う。
+
+`LSUIElement = true` にしてあるので Dock には出ない。
+ローカルビルドなので quarantine 属性は付かず、Gatekeeper の警告も出ない。
+
+---
+
+## トラブルシューティング
+
+### スリープしなくなったまま戻せない
+
+```
+pmset -g | grep SleepDisabled      # 1 なら抑止中
+sudo pmset -a disablesleep 0       # 手動で戻す
+```
+
+アプリを強制終了した場合など、`SleepDisabled` が 1 のまま残ることがある。
+アプリは次回起動時にその状態を検出してオン表示で引き継ぐので、そこからオフにしてもよい。
+
+### アイコンが表示と違う気がする
+
+3 秒ごとに `pmset` の実際の値と突き合わせて自動補正している。
+シェルの `nosleep` 関数など、アプリ外から変更された場合も追従する。
+オン/オフ操作の 0.5 秒後にも反映を確認している。
+
+### 認証ダイアログが見当たらない
+
+他のウィンドウの背後に隠れていることがある。
+アイコンを左クリック（認証中はメニューが開く）→「認証をキャンセル」で取り消せる。
+
+---
+
+## アンインストール
+
+```
+# アプリ
+pkill -x NoSleep
+rm -rf ~/Applications/NoSleep.app
+# → システム設定 > 一般 > ログイン項目 から NoSleep を削除
+
+# シェル関数
+# ~/.zshrc の「# ---- nosleep :」から「# ---- nosleep ここまで ----」までを削除
+
+# 設定を確実に戻す
+sudo pmset -a disablesleep 0
+```
