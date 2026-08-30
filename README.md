@@ -10,15 +10,72 @@ AI エージェントに長時間の作業を任せている間に Mac がスリ
 
 ---
 
+## セットアップ
+
+clone しただけでは動かない。バイナリは配布しておらず、手元でビルドする必要がある。
+
+### 必要なもの
+
+- macOS 14 以降（ログイン項目の登録に `SMAppService` を使うため）
+- Xcode Command Line Tools（`swiftc`）
+  未導入なら `xcode-select --install` を実行する（GUI のダイアログが出る）
+
+Apple Silicon / Intel のどちらでもビルドできる（`uname -m` からターゲットを決める）。
+ビルドしたマシン用の 1 アーキテクチャのみを生成するので、ユニバーサルバイナリにはならない。
+
+> Intel については x86_64 向けのコンパイルが通ることまでは確認済みだが、
+> **Intel 実機での起動・動作は未検証**。
+
+### Claude Code に任せる場合
+
+リポジトリのルートで Claude Code を開き、こう言えばよい。
+
+```
+セットアップして
+```
+
+手順は [CLAUDE.md](CLAUDE.md) に書いてある。前提の確認 → ビルド → インストール →
+（希望すれば）`nosleep` コマンドの登録まで進む。`sudo` と `.zshrc` の編集を伴うステップでは
+確認を求められる。
+
+### 手動でやる場合
+
+```sh
+git clone https://github.com/h-gonoi/no-sleep-for-mac.git
+cd no-sleep-for-mac
+
+# 1. メニューバーアプリをビルドして ~/Applications に入れる
+zsh build.sh
+
+# 2. 起動する（メニューバーに 🌙 が出れば成功。Dock には出ない）
+open ~/Applications/NoSleep.app
+```
+
+`nosleep` コマンドも使いたい場合は、`.zshrc` に 1 行追記する
+（後述のとおり **GUI と同時には使わないこと**）。
+
+```sh
+cp ~/.zshrc ~/.zshrc.backup.$(date +%Y%m%d-%H%M%S)
+echo "[[ -r $PWD/nosleep.zsh ]] && source $PWD/nosleep.zsh" >> ~/.zshrc
+exec zsh
+```
+
+clone 先はどこでもよい。`build.sh` も `.zshrc` の `source` 行も、置いた場所を基準に動く。
+上のコマンドは**リポジトリのルートで実行すること**（`$PWD` が展開されて絶対パスが書き込まれる）。
+存在チェックを前置してあるのは、あとでリポジトリを移動・削除したときに、
+新しいシェルを開くたび `no such file or directory` が出るのを防ぐため。
+
+---
+
 ## 構成
 
 | 場所 | 内容 |
 |---|---|
-| `~/Applications/NoSleep.app` | メニューバーアプリ（本体） |
-| `~/Projects/nosleep-menubar/main.swift` | アプリのソース |
-| `~/Projects/nosleep-menubar/build.sh` | ビルド＆インストール |
-| `~/.zshrc` | `nosleep` シェル関数（末尾に追記） |
-| `~/.zshrc.backup.YYYYMMDD-HHMMSS` | 関数を追加する前の `.zshrc` |
+| `~/Applications/NoSleep.app` | メニューバーアプリ（インストール先） |
+| `main.swift` | アプリのソース |
+| `build.sh` | ビルド＆インストール |
+| `nosleep.zsh` | `nosleep` シェル関数の本体 |
+| `~/.zshrc` | 上記を `source` する 1 行（任意） |
 
 ### ⚠ GUI とコマンドを同時に使わないこと
 
@@ -66,6 +123,8 @@ AI エージェントに長時間の作業を任せている間に Mac がスリ
 
 ## `nosleep` コマンドの使い方
 
+`nosleep.zsh` を `.zshrc` から `source` してあること（セットアップ参照）。
+
 ```
 nosleep         # 1時間スリープを防ぐ
 nosleep 2       # 2時間
@@ -107,8 +166,10 @@ sudo visudo -f /etc/sudoers.d/nosleep
 
 ## ビルドと再インストール
 
+ソースを書き換えたら、リポジトリのルートで実行し直す。
+
 ```
-zsh ~/Projects/nosleep-menubar/build.sh
+zsh build.sh
 ```
 
 起動中のアプリを終了 → `swiftc` でコンパイル → `Info.plist` 生成 → ad-hoc 署名 →
@@ -153,7 +214,7 @@ rm -rf ~/Applications/NoSleep.app
 # → システム設定 > 一般 > ログイン項目 から NoSleep を削除
 
 # シェル関数
-# ~/.zshrc の「# ---- nosleep :」から「# ---- nosleep ここまで ----」までを削除
+# ~/.zshrc に追記した nosleep.zsh を読み込む行を削除
 
 # 設定を確実に戻す
 sudo pmset -a disablesleep 0
