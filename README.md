@@ -1,7 +1,7 @@
 # NoSleep — Mac のスリープを止める道具
 
 macOS 標準の `pmset` と `caffeinate` だけを使って、指定した間だけ Mac をスリープさせないようにする。
-GUI（メニューバーアプリ）とコマンドラインの 2 つがある。
+メニューバーに常駐する小さなアプリで、クリックでオン / オフを切り替える。
 
 AI エージェントに長時間の作業を任せている間に Mac がスリープして処理が止まる、という問題を
 避けるために作った。ビルドやテストの完走待ち、長時間の転送やレンダリングにも使える。
@@ -10,20 +10,56 @@ AI エージェントに長時間の作業を任せている間に Mac がスリ
 
 ---
 
+## セットアップ
+
+clone しただけでは動かない。バイナリは配布しておらず、手元でビルドする必要がある。
+
+### 必要なもの
+
+- macOS 14 以降（ログイン項目の登録に `SMAppService` を使うため）
+- Xcode Command Line Tools（`swiftc`）
+  未導入なら `xcode-select --install` を実行する（GUI のダイアログが出る）
+
+Apple Silicon / Intel のどちらでもビルドできる（`uname -m` からターゲットを決める）。
+ビルドしたマシン用の 1 アーキテクチャのみを生成するので、ユニバーサルバイナリにはならない。
+
+> Intel については x86_64 向けのコンパイルが通ることまでは確認済みだが、
+> **Intel 実機での起動・動作は未検証**。
+
+### Claude Code に任せる場合
+
+リポジトリのルートで Claude Code を開き、こう言えばよい。
+
+```
+セットアップして
+```
+
+手順は [CLAUDE.md](CLAUDE.md) に書いてある。前提の確認 → ビルド → インストール → 起動確認まで進む。
+
+### 手動でやる場合
+
+```sh
+git clone https://github.com/h-gonoi/no-sleep-for-mac.git
+cd no-sleep-for-mac
+
+# 1. メニューバーアプリをビルドして ~/Applications に入れる
+zsh build.sh
+
+# 2. 起動する（メニューバーに 🌙 が出れば成功。Dock には出ない）
+open ~/Applications/NoSleep.app
+```
+
+clone 先はどこでもよい。`build.sh` は自分の置かれた場所を基準に動く。
+
+---
+
 ## 構成
 
 | 場所 | 内容 |
 |---|---|
-| `~/Applications/NoSleep.app` | メニューバーアプリ（本体） |
-| `~/Projects/nosleep-menubar/main.swift` | アプリのソース |
-| `~/Projects/nosleep-menubar/build.sh` | ビルド＆インストール |
-| `~/.zshrc` | `nosleep` シェル関数（末尾に追記） |
-| `~/.zshrc.backup.YYYYMMDD-HHMMSS` | 関数を追加する前の `.zshrc` |
-
-### ⚠ GUI とコマンドを同時に使わないこと
-
-どちらも同じ `pmset -a disablesleep` を操作するため、片方の解除処理がもう片方の抑止まで解いてしまう。
-どちらか一方に決めて使う。GUI だけ使うなら `.zshrc` の関数は消してよい。
+| `~/Applications/NoSleep.app` | メニューバーアプリ（インストール先） |
+| `main.swift` | アプリのソース |
+| `build.sh` | ビルド＆インストール |
 
 ---
 
@@ -64,19 +100,6 @@ AI エージェントに長時間の作業を任せている間に Mac がスリ
 
 ---
 
-## `nosleep` コマンドの使い方
-
-```
-nosleep         # 1時間スリープを防ぐ
-nosleep 2       # 2時間
-nosleep abc     # 使い方を表示するだけ。電源設定は変更しない
-```
-
-引数は 1 以上の整数のみ。通常終了でも Ctrl-C でも、必ず `pmset -a disablesleep 0` に戻す
-（`trap` を INT / TERM / EXIT の 3 つに登録し、二重実行はガードしている）。
-
----
-
 ## 仕組み
 
 オンにするとき、次の 2 つを併用する。
@@ -107,8 +130,10 @@ sudo visudo -f /etc/sudoers.d/nosleep
 
 ## ビルドと再インストール
 
+ソースを書き換えたら、リポジトリのルートで実行し直す。
+
 ```
-zsh ~/Projects/nosleep-menubar/build.sh
+zsh build.sh
 ```
 
 起動中のアプリを終了 → `swiftc` でコンパイル → `Info.plist` 生成 → ad-hoc 署名 →
@@ -134,7 +159,7 @@ sudo pmset -a disablesleep 0       # 手動で戻す
 ### アイコンが表示と違う気がする
 
 3 秒ごとに `pmset` の実際の値と突き合わせて自動補正している。
-シェルの `nosleep` 関数など、アプリ外から変更された場合も追従する。
+ターミナルから `sudo pmset -a disablesleep` を直接叩くなど、アプリ外から変更された場合も追従する。
 オン/オフ操作の 0.5 秒後にも反映を確認している。
 
 ### 認証ダイアログが見当たらない
@@ -151,9 +176,6 @@ sudo pmset -a disablesleep 0       # 手動で戻す
 pkill -x NoSleep
 rm -rf ~/Applications/NoSleep.app
 # → システム設定 > 一般 > ログイン項目 から NoSleep を削除
-
-# シェル関数
-# ~/.zshrc の「# ---- nosleep :」から「# ---- nosleep ここまで ----」までを削除
 
 # 設定を確実に戻す
 sudo pmset -a disablesleep 0

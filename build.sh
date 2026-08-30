@@ -11,8 +11,10 @@ rm -rf "$SRC_DIR/build"
 mkdir -p "$BUILD/Contents/MacOS" "$BUILD/Contents/Resources"
 
 echo "==> コンパイル"
+# Apple Silicon は arm64、Intel Mac は x86_64。ビルドしたマシン用の 1 アーキテクチャのみ
+ARCH="$(uname -m)"
 swiftc -O \
-  -target arm64-apple-macos14.0 \
+  -target "${ARCH}-apple-macos14.0" \
   -o "$BUILD/Contents/MacOS/${APP_NAME}" \
   "$SRC_DIR/main.swift"
 
