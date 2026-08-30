@@ -1,8 +1,7 @@
 # NoSleep — Claude Code 向けメモ
 
-macOS のスリープを一時的に止めるツール。メニューバーアプリ（Swift 単一ファイル）と
-zsh 関数（`nosleep` コマンド）の 2 系統。どちらも `pmset -a disablesleep` と
-`caffeinate` を叩くだけで、外部依存はない。
+macOS のスリープを一時的に止めるメニューバーアプリ（Swift 単一ファイル）。
+`pmset -a disablesleep` と `caffeinate` を叩くだけで、外部依存はない。
 
 ## ファイル構成
 
@@ -10,7 +9,6 @@ zsh 関数（`nosleep` コマンド）の 2 系統。どちらも `pmset -a disa
 |---|---|
 | `main.swift` | メニューバーアプリ本体（単一ファイル。分割しない） |
 | `build.sh` | `swiftc` でビルド → Info.plist 生成 → ad-hoc 署名 → `~/Applications/NoSleep.app` へ設置 |
-| `nosleep.zsh` | `nosleep` シェル関数。`.zshrc` から `source` して使う |
 | `README.md` | 利用者向けドキュメント（日本語） |
 
 パッケージマネージャも Xcode プロジェクトも使わない。ビルドは `build.sh` だけ。
@@ -18,7 +16,7 @@ zsh 関数（`nosleep` コマンド）の 2 系統。どちらも `pmset -a disa
 ## セットアップ（clone 直後にこれを実行する）
 
 ユーザーから「セットアップして」と言われたら、以下を上から順に実行する。
-**`sudo` や `.zshrc` への追記を伴うステップは、実行前に必ずユーザーに確認を取る。**
+**`sudo` を伴うステップは、実行前に必ずユーザーに確認を取る。**
 
 ### 0. 前提の確認
 
@@ -50,25 +48,7 @@ open ~/Applications/NoSleep.app
 
 メニューバーに 🌙 が出れば成功。`LSUIElement = true` なので Dock には出ない。
 
-### 2. `nosleep` コマンド（任意 / GUI と併用しない）
-
-**GUI とコマンドは同時に使わない。** どちらも同じ `pmset -a disablesleep` を操作するため、
-片方の解除処理がもう片方の抑止まで解いてしまう。ユーザーがどちらを使うか決めてから入れる。
-
-`.zshrc` を編集する前にバックアップを取る:
-
-```sh
-cp ~/.zshrc ~/.zshrc.backup.$(date +%Y%m%d-%H%M%S)
-echo "[[ -r $PWD/nosleep.zsh ]] && source $PWD/nosleep.zsh" >> ~/.zshrc
-```
-
-**必ずリポジトリのルートで実行すること。** `$PWD` は追記の時点で展開されるので、
-`.zshrc` に書き込まれるのは絶対パスになる。存在チェックを前置しているのは、
-あとでリポジトリを移動・削除したときに新しいシェルを開くたび
-`no such file or directory` が出るのを防ぐため。
-反映は新しいシェルを開くか `source ~/.zshrc`。
-
-### 3. 動作確認
+### 2. 動作確認
 
 インストール直後の状態は「抑止していない」= `SleepDisabled 0` であるべき。
 
@@ -88,6 +68,10 @@ pmset -g | grep SleepDisabled
   `caffeinate` を起動する。逆順だと認証キャンセル時に `caffeinate` だけが残る。
 - **ドキュメントは日本語**。README も本ファイルもコード内コメントも日本語で統一する。
 - **`build/` は Git 管理外**（`.gitignore` 済み）。
+- **スリープ抑止の経路をもう 1 つ増やさない。** `pmset -a disablesleep` は
+  マシン全体で 1 個のフラグで、参照カウントがない。アプリとは別に
+  シェル関数などから同じフラグを操作すると、片方の解除処理がもう片方の抑止まで倒す。
+  かつて同梱していた `nosleep` シェル関数はこの理由で削除した。
 
 ## トラブルシューティング
 

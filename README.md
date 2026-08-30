@@ -1,7 +1,7 @@
 # NoSleep — Mac のスリープを止める道具
 
 macOS 標準の `pmset` と `caffeinate` だけを使って、指定した間だけ Mac をスリープさせないようにする。
-GUI（メニューバーアプリ）とコマンドラインの 2 つがある。
+メニューバーに常駐する小さなアプリで、クリックでオン / オフを切り替える。
 
 AI エージェントに長時間の作業を任せている間に Mac がスリープして処理が止まる、という問題を
 避けるために作った。ビルドやテストの完走待ち、長時間の転送やレンダリングにも使える。
@@ -34,9 +34,7 @@ Apple Silicon / Intel のどちらでもビルドできる（`uname -m` から�
 セットアップして
 ```
 
-手順は [CLAUDE.md](CLAUDE.md) に書いてある。前提の確認 → ビルド → インストール →
-（希望すれば）`nosleep` コマンドの登録まで進む。`sudo` と `.zshrc` の編集を伴うステップでは
-確認を求められる。
+手順は [CLAUDE.md](CLAUDE.md) に書いてある。前提の確認 → ビルド → インストール → 起動確認まで進む。
 
 ### 手動でやる場合
 
@@ -51,19 +49,7 @@ zsh build.sh
 open ~/Applications/NoSleep.app
 ```
 
-`nosleep` コマンドも使いたい場合は、`.zshrc` に 1 行追記する
-（後述のとおり **GUI と同時には使わないこと**）。
-
-```sh
-cp ~/.zshrc ~/.zshrc.backup.$(date +%Y%m%d-%H%M%S)
-echo "[[ -r $PWD/nosleep.zsh ]] && source $PWD/nosleep.zsh" >> ~/.zshrc
-exec zsh
-```
-
-clone 先はどこでもよい。`build.sh` も `.zshrc` の `source` 行も、置いた場所を基準に動く。
-上のコマンドは**リポジトリのルートで実行すること**（`$PWD` が展開されて絶対パスが書き込まれる）。
-存在チェックを前置してあるのは、あとでリポジトリを移動・削除したときに、
-新しいシェルを開くたび `no such file or directory` が出るのを防ぐため。
+clone 先はどこでもよい。`build.sh` は自分の置かれた場所を基準に動く。
 
 ---
 
@@ -74,13 +60,6 @@ clone 先はどこでもよい。`build.sh` も `.zshrc` の `source` 行も、�
 | `~/Applications/NoSleep.app` | メニューバーアプリ（インストール先） |
 | `main.swift` | アプリのソース |
 | `build.sh` | ビルド＆インストール |
-| `nosleep.zsh` | `nosleep` シェル関数の本体 |
-| `~/.zshrc` | 上記を `source` する 1 行（任意） |
-
-### ⚠ GUI とコマンドを同時に使わないこと
-
-どちらも同じ `pmset -a disablesleep` を操作するため、片方の解除処理がもう片方の抑止まで解いてしまう。
-どちらか一方に決めて使う。GUI だけ使うなら `.zshrc` の関数は消してよい。
 
 ---
 
@@ -118,21 +97,6 @@ clone 先はどこでもよい。`build.sh` も `.zshrc` の `source` 行も、�
 
 自動起動しても**勝手にオンにはならない**。起動時に実際の設定値を読んで、その状態を表示するだけ。
 ただし `pmset -a disablesleep` は再起動をまたいで残るため、オンのまま再起動すると次回もオンのまま。
-
----
-
-## `nosleep` コマンドの使い方
-
-`nosleep.zsh` を `.zshrc` から `source` してあること（セットアップ参照）。
-
-```
-nosleep         # 1時間スリープを防ぐ
-nosleep 2       # 2時間
-nosleep abc     # 使い方を表示するだけ。電源設定は変更しない
-```
-
-引数は 1 以上の整数のみ。通常終了でも Ctrl-C でも、必ず `pmset -a disablesleep 0` に戻す
-（`trap` を INT / TERM / EXIT の 3 つに登録し、二重実行はガードしている）。
 
 ---
 
@@ -195,7 +159,7 @@ sudo pmset -a disablesleep 0       # 手動で戻す
 ### アイコンが表示と違う気がする
 
 3 秒ごとに `pmset` の実際の値と突き合わせて自動補正している。
-シェルの `nosleep` 関数など、アプリ外から変更された場合も追従する。
+ターミナルから `sudo pmset -a disablesleep` を直接叩くなど、アプリ外から変更された場合も追従する。
 オン/オフ操作の 0.5 秒後にも反映を確認している。
 
 ### 認証ダイアログが見当たらない
@@ -212,9 +176,6 @@ sudo pmset -a disablesleep 0       # 手動で戻す
 pkill -x NoSleep
 rm -rf ~/Applications/NoSleep.app
 # → システム設定 > 一般 > ログイン項目 から NoSleep を削除
-
-# シェル関数
-# ~/.zshrc に追記した nosleep.zsh を読み込む行を削除
 
 # 設定を確実に戻す
 sudo pmset -a disablesleep 0
